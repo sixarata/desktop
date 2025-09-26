@@ -1,0 +1,15 @@
+"appbuild"
+{
+  "appid" "3974440"                         // <-- replace with your real App ID
+  "desc"  "Sixarata desktop build"
+  "buildoutput" "steam/steambuild_output"
+  "contentroot" "."
+  "setlive" "beta"                         // change to "public" when ready
+
+  "depots"
+  {
+    "3974442" "steam/depot_win.vdf"        // Windows depot
+    "3974443" "steam/depot_osx.vdf"        // macOS depot
+    "3974444" "steam/depot_linux.vdf"      // Linux depot
+  }
+}

@@ -1,0 +1,10 @@
+"DepotBuildConfig"
+{
+  "DepotID" "3974444"
+  "FileMapping"
+  {
+    "LocalPath"  "release/linux/Sixarata/**"
+    "DepotPath"  "Sixarata"
+    "recursive"  "1"
+  }
+}

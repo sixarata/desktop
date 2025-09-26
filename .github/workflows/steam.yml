@@ -1,0 +1,129 @@
+name: Tauri Build & (Optional) Steam Upload
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-22.04, windows-2022]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf rsync
+
+      - name: Install Tauri CLI
+        run: npm i -D @tauri-apps/cli
+
+      - name: Build web (if needed) and sync to app/
+        shell: bash
+        run: |
+          set -e
+          if [ -f vendor/sixarata/package.json ]; then
+            npm --prefix vendor/sixarata ci
+            if npm --prefix vendor/sixarata run | grep -qE '(^|\s)build(\s|:)'; then
+              npm --prefix vendor/sixarata run build
+              rm -rf app && mkdir app && cp -R vendor/sixarata/dist/* app/
+            else
+              rm -rf app && mkdir app && rsync -a --delete \
+                --exclude '.git' --exclude 'node_modules' --exclude 'src-tauri' \
+                vendor/sixarata/ app/
+            fi
+          else
+            mkdir -p app
+          fi
+          ls -la app | head -n 50
+
+      - name: Tauri build
+        run: npx tauri build
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.os }}
+          path: src-tauri/target/release/bundle/**/*
+          if-no-files-found: error
+
+  steam:
+    name: Prepare Steam folders & (optional) upload
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Expand artifacts into workspace layout
+        run: |
+          mkdir -p src-tauri/target/release/bundle
+          # Move per-OS bundle trees back under the expected path
+          # macOS
+          if ls artifacts/bundle-macos-14 1>/dev/null 2>&1; then
+            mkdir -p src-tauri/target/release/bundle/macos
+            cp -R artifacts/bundle-macos-14/* src-tauri/target/release/bundle/macos/ || true
+          fi
+          # Windows
+          if ls artifacts/bundle-windows-2022 1>/dev/null 2>&1; then
+            mkdir -p src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
+            cp -R artifacts/bundle-windows-2022/* src-tauri/target/release/bundle/ -v || true
+          fi
+          # Linux
+          if ls artifacts/bundle-ubuntu-22.04 1>/dev/null 2>&1; then
+            mkdir -p src-tauri/target/release/bundle/appimage
+            cp -R artifacts/bundle-ubuntu-22.04/* src-tauri/target/release/bundle/ -v || true
+          fi
+
+      - name: Install helpers
+        run: sudo apt-get update && sudo apt-get install -y bash coreutils findutils p7zip-full
+
+      - name: Gather macOS
+        run: bash steam/scripts/gather_macos.sh
+
+      - name: Gather Linux
+        run: bash steam/scripts/gather_linux.sh
+
+      - name: Gather Windows
+        shell: pwsh
+        run: ./steam/scripts/gather_win.ps1
+
+      - name: Upload Steam-ready folders as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: steam-release-folders
+          path: |
+            release/osx/Sixarata/**
+            release/linux/Sixarata/**
+            release/win64/Sixarata/**
+
+      - name: Upload to Steam (steamcmd in Docker)
+        if: ${{ secrets.STEAM_USERNAME && secrets.STEAM_PASSWORD }}
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work cm2network/steamcmd \
+            bash -lc \
+            "steamcmd +login \"$STEAM_USERNAME\" \"$STEAM_PASSWORD\" ${STEAM_GUARD_CODE:++set_steam_guard_code \"$STEAM_GUARD_CODE\"} +run_app_build steam/build_app.vdf +quit"

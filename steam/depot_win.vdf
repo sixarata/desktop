@@ -1,0 +1,11 @@
+"DepotBuildConfig"
+{
+  "DepotID" "3974442"
+  "FileMapping"
+  {
+    "LocalPath"  "release/win64/Sixarata/**"
+    "DepotPath"  "Sixarata"
+    "recursive"  "1"
+  }
+  "FileExclusion" "*.pdb"
+}

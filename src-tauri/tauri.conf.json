@@ -1,0 +1,33 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "productName": "Sixarata",
+  "version": "0.0.1",
+  "identifier": "com.sixarata.desktop",
+  "build": {
+    "frontendDist": "../app"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "title": "Sixarata",
+        "width": 1280,
+        "height": 800,
+        "resizable": true
+        }
+      ]
+  },
+  "bundle": {
+    "targets": [
+      "dmg",
+      "app",
+      "msi",
+      "nsis",
+      "appimage",
+      "deb",
+      "rpm"
+    ]
+  }
+}

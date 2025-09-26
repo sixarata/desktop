@@ -1,0 +1,15 @@
+{
+  "name": "sixarata-desktop",
+  "private": true,
+  "version": "0.0.1",
+  "license": "MIT",
+  "scripts": {
+    "sync:web": "rm -rf app && mkdir app && rsync -a --delete --exclude '.git' --exclude 'node_modules' --exclude 'src-tauri' vendor/sixarata/ app/",
+    "dev": "npm run sync:web && tauri dev",
+    "build": "npm run sync:web && tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4"
+  }
+}
