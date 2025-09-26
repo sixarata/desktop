@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Tauri Build & (Optional) Steam Upload
 
 on:
@@ -68,6 +69,9 @@ jobs:
     name: Prepare Steam folders & (optional) upload
     needs: build
     runs-on: ubuntu-22.04
+    env:
+      STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+      STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -119,11 +123,7 @@ jobs:
             release/win64/Sixarata/**
 
       - name: Upload to Steam (steamcmd in Docker)
-        if: ${{ secrets.STEAM_USERNAME && secrets.STEAM_PASSWORD }}
-        env:
-          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
-          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
         run: |
           docker run --rm -v "$PWD:/work" -w /work cm2network/steamcmd \
             bash -lc \
-            "steamcmd +login \"$STEAM_USERNAME\" \"$STEAM_PASSWORD\" ${STEAM_GUARD_CODE:++set_steam_guard_code \"$STEAM_GUARD_CODE\"} +run_app_build steam/build_app.vdf +quit"
+            "/home/steam/steamcmd/steamcmd.sh +login \"$STEAM_USERNAME\" \"$STEAM_PASSWORD\" +run_app_build steam/build_app.vdf +quit"
