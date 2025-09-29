@@ -221,7 +221,9 @@ jobs:
           fi
 
       - name: Install helpers
-        run: sudo apt-get update && sudo apt-get install -y bash coreutils findutils p7zip-full
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bash coreutils findutils p7zip-full msitools
 
       - name: Make gather scripts executable
         run: chmod +x steam/scripts/*.sh
@@ -233,8 +235,7 @@ jobs:
         run: bash steam/scripts/gather_linux.sh
 
       - name: Gather Windows
-        shell: pwsh
-        run: ./steam/scripts/gather_win.ps1
+        run: ./steam/scripts/gather_windows.sh
 
       - name: Upload Steam-ready folders as artifact
         uses: actions/upload-artifact@v4

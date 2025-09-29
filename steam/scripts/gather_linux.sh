@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dst="steam/../release/linux/Sixarata"
-rm -rf "$dst" && mkdir -p "$dst"
+SRC_DIR="src-tauri/target/release/bundle"
+DST_DIR="release/linux/Sixarata"
 
-# Prefer AppImage (simple for Steam)
-appimage_dir="src-tauri/target/release/bundle/appimage"
-appimage=$(ls "$appimage_dir"/*.AppImage 2>/dev/null | head -n1 || true)
+rm -rf "$DST_DIR"
+mkdir -p "$DST_DIR"
 
-if [[ -n "${appimage}" ]]; then
-  cp "$appimage" "$dst/Sixarata.AppImage"
-else
-  # Fallback: raw folder from deb/rpm payloads if available
-  echo "No AppImage found; consider enabling AppImage target or copy raw ELF folder."
-  exit 1
+# Prefer AppImage
+appimage="$(find "$SRC_DIR/appimage" -maxdepth 1 -type f -name '*.AppImage' -print -quit 2>/dev/null || true)"
+if [ -n "${appimage:-}" ]; then
+  echo "Using AppImage: $appimage"
+  cp "$appimage" "$DST_DIR/Sixarata.AppImage"
+  chmod +x "$DST_DIR/Sixarata.AppImage"
+  ls -la "$DST_DIR"
+  exit 0
 fi
 
-echo "Linux gathered into $dst/"
+# Optionally, you could add .deb/.rpm extraction here; for now, fail fast & loud
+echo "::group::Linux bundle tree"
+find "$SRC_DIR" -maxdepth 3 -print || true
+echo "::endgroup::"
+echo "::error::No AppImage found. Enable the AppImage target or add a .deb/.rpm extraction path."
+exit 1
