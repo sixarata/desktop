@@ -91,22 +91,34 @@ jobs:
           npx tauri build --verbose 2>&1 | tee tauri-build.log
 
       # ---- Collect artifacts deterministically (no fragile globs) ----
-      - name: Collect macOS bundles
+      - name: Collect macOS bundles (Bash 3.2 compatible)
         if: ${{ matrix.os == 'macos-14' }}
         run: |
           set -euo pipefail
           mkdir -p _collect/macos
-          # .app are directories; find them and copy; also copy any .dmg
-          mapfile -t APPS < <(find src-tauri/target -type d -name "*.app" 2>/dev/null | sort)
-          mapfile -t DMGS < <(find src-tauri/target -type f -name "*.dmg" 2>/dev/null | sort)
-          if [ ${#APPS[@]} -eq 0 ] && [ ${#DMGS[@]} -eq 0 ]; then
+          found=0
+      
+          # Copy any .app bundles
+          while IFS= read -r -d '' f; do
+            echo "Copy $f"
+            cp -R "$f" "_collect/macos/"
+            found=1
+          done < <(find src-tauri/target -type d -name '*.app' -print0 2>/dev/null)
+      
+          # Copy any .dmg images
+          while IFS= read -r -d '' f; do
+            echo "Copy $f"
+            cp -R "$f" "_collect/macos/"
+            found=1
+          done < <(find src-tauri/target -type f -name '*.dmg' -print0 2>/dev/null)
+      
+          if [ "$found" -eq 0 ]; then
             echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
             echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
             echo "::error::No macOS bundles (.app/.dmg) found."
             exit 1
           fi
-          for f in "${APPS[@]}"; do echo "Copy $f"; cp -R "$f" _collect/macos/; done
-          for f in "${DMGS[@]}"; do echo "Copy $f"; cp -R "$f" _collect/macos/; done
+
           ls -la _collect/macos
 
       - name: Upload macOS bundle(s)
@@ -117,19 +129,26 @@ jobs:
           path: _collect/macos/**
           if-no-files-found: error
 
-      - name: Collect Windows bundles
+      - name: Collect Windows bundles (exe/msi) — Bash compatible
         if: ${{ matrix.os == 'windows-2022' }}
         run: |
           set -euo pipefail
           mkdir -p _collect/windows
-          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null | sort)
-          if [ ${#FILES[@]} -eq 0 ]; then
+          found=0
+      
+          while IFS= read -r -d '' f; do
+            echo "Copy $f"
+            cp -R "$f" "_collect/windows/"
+            found=1
+          done < <(find src-tauri/target -type f \( -name '*.exe' -o -name '*.msi' \) -print0 2>/dev/null)
+      
+          if [ "$found" -eq 0 ]; then
             echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
             echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
             echo "::error::No Windows bundles (.exe/.msi) found."
             exit 1
           fi
-          for f in "${FILES[@]}"; do echo "Copy $f"; cp -R "$f" _collect/windows/; done
+      
           ls -la _collect/windows
 
       - name: Upload Windows bundle(s)
@@ -140,19 +159,26 @@ jobs:
           path: _collect/windows/**
           if-no-files-found: error
 
-      - name: Collect Linux bundles
+      - name: Collect Linux bundles (AppImage/deb/rpm) — Bash compatible
         if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
           set -euo pipefail
           mkdir -p _collect/linux
-          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) 2>/dev/null | sort)
-          if [ ${#FILES[@]} -eq 0 ]; then
+          found=0
+      
+          while IFS= read -r -d '' f; do
+            echo "Copy $f"
+            cp -R "$f" "_collect/linux/"
+            found=1
+          done < <(find src-tauri/target -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0 2>/dev/null)
+      
+          if [ "$found" -eq 0 ]; then
             echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
             echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
             echo "::error::No Linux bundles (AppImage/deb/rpm) found."
             exit 1
           fi
-          for f in "${FILES[@]}"; do echo "Copy $f"; cp -R "$f" _collect/linux/; done
+      
           ls -la _collect/linux
 
       - name: Upload Linux bundle(s)
