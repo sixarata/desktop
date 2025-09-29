@@ -31,7 +31,8 @@
     ],
     "icon": [
       "icons/app-512.png",
-      "icons/app-256.png"
+      "icons/app-256.png",
+      "icons/app-icon.ico"
     ]
   }
 }
