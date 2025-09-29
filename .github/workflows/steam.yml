@@ -81,16 +81,17 @@ jobs:
           if ! grep -q '"frontendDist": "../app"' src-tauri/tauri.conf.json; then
             echo "::warning::Set \"frontendDist\": \"../app\" in src-tauri/tauri.conf.json"
           fi
-
+        
       - name: Tauri info
         run: npx tauri info
-
-      - name: Tauri build (verbose)
+      
+      - name: Tauri build (force macOS bundles; verbose)
+        if: ${{ matrix.os == 'macos-14' }}
         run: |
           set -euo pipefail
-          npx tauri build --verbose 2>&1 | tee tauri-build.log
-
-      # ---- Collect artifacts deterministically (no fragile globs) ----
+          # Force macOS bundling; arm64 runner builds aarch64 target
+          npx tauri build --bundles app,dmg --target aarch64-apple-darwin --verbose 2>&1 | tee tauri-build-macos.log
+      
       - name: Collect macOS bundles (Bash 3.2 compatible)
         if: ${{ matrix.os == 'macos-14' }}
         run: |
@@ -113,14 +114,15 @@ jobs:
           done < <(find src-tauri/target -type f -name '*.dmg' -print0 2>/dev/null)
       
           if [ "$found" -eq 0 ]; then
-            echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
+            echo "::group::tauri.conf.json"; cat src-tauri/tauri.conf.json || true; echo "::endgroup::"
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build-macos.log || true; echo "::endgroup::"
             echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
             echo "::error::No macOS bundles (.app/.dmg) found."
             exit 1
           fi
-
+      
           ls -la _collect/macos
-
+      
       - name: Upload macOS bundle(s)
         if: ${{ matrix.os == 'macos-14' }}
         uses: actions/upload-artifact@v4
