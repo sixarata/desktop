@@ -86,53 +86,95 @@ jobs:
       - name: Tauri info
         run: npx tauri info
 
-      - name: Tauri build (verbose)
-        run: npx tauri build --verbose
-
-      - name: Show bundle tree
+      - name: Tauri build (verbose, collect logs)
         run: |
-          echo "== target dirs =="
-          find src-tauri/target -maxdepth 4 -type d -print || true
-          echo "== macOS =="
-          ls -la src-tauri/target/release/bundle/macos || true
-          echo "== Windows NSIS/MSI =="
-          ls -la src-tauri/target/release/bundle/nsis || true
-          ls -la src-tauri/target/release/bundle/msi || true
-          echo "== Linux AppImage/DEB/RPM =="
-          ls -la src-tauri/target/release/bundle/appimage || true
-          ls -la src-tauri/target/release/bundle/deb || true
-          ls -la src-tauri/target/release/bundle/rpm || true
+          set -euo pipefail
+          npx tauri build --verbose 2>&1 | tee tauri-build-macos.log
 
-      # upload per-OS with exact globs
-      - name: Upload macOS bundle
+      - name: Collect macOS bundles (app/dmg) deterministically
+        if: ${{ matrix.os == 'macos-14' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _collect/macos
+          # Find any .app or .dmg under target; copy them into _collect/macos
+          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.dmg" \) -o -type d \( -name "*.app" \) | sort)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::group::Build log (tail)"
+            tail -n 2000 tauri-build-macos.log || true
+            echo "::endgroup::"
+            echo "::group::Target tree"
+            find src-tauri/target -maxdepth 5 -print
+            echo "::endgroup::"
+            echo "::error::No macOS bundles (.app/.dmg) found anywhere under src-tauri/target."
+            exit 1
+          fi
+          for f in "${FILES[@]}"; do
+            echo "Collecting: $f"
+            cp -R "$f" _collect/macos/
+          done
+          echo "Collected into _collect/macos:"
+          ls -la _collect/macos
+
+      - name: Upload macOS bundle(s)
         if: ${{ matrix.os == 'macos-14' }}
         uses: actions/upload-artifact@v4
         with:
           name: bundle-macos-14
-          path: |
-            src-tauri/target/release/bundle/macos/*.app
-            src-tauri/target/release/bundle/macos/*.dmg
+          path: _collect/macos/**
           if-no-files-found: error
 
-      - name: Upload Windows bundle
+      - name: Tauri build (verbose, collect logs)
+        run: |
+          set -euo pipefail
+          npx tauri build --verbose 2>&1 | tee tauri-build.log
+
+      - name: Collect Windows bundles (nsis/msi)
+        if: ${{ matrix.os == 'windows-2022' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _collect/windows
+          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.exe" -o -name "*.msi" \) | sort)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            tail -n 2000 tauri-build.log || true
+            find src-tauri/target -maxdepth 5 -print
+            echo "::error::No Windows bundles (.exe/.msi) found."
+            exit 1
+          fi
+          for f in "${FILES[@]}"; do cp -R "$f" _collect/windows/; done
+          ls -la _collect/windows
+
+      - name: Upload Windows bundle(s)
         if: ${{ matrix.os == 'windows-2022' }}
         uses: actions/upload-artifact@v4
         with:
           name: bundle-windows-2022
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          path: _collect/windows/**
           if-no-files-found: error
 
-      - name: Upload Linux bundle
+      - name: Collect Linux bundles (AppImage/deb/rpm)
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _collect/linux
+          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | sort)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            tail -n 2000 tauri-build.log || true
+            find src-tauri/target -maxdepth 5 -print
+            echo "::error::No Linux bundles (AppImage/deb/rpm) found."
+            exit 1
+          fi
+          for f in "${FILES[@]}"; do cp -R "$f" _collect/linux/; done
+          ls -la _collect/linux
+
+      - name: Upload Linux bundle(s)
         if: ${{ matrix.os == 'ubuntu-22.04' }}
         uses: actions/upload-artifact@v4
         with:
           name: bundle-ubuntu-22.04
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
+          path: _collect/linux/**
           if-no-files-found: error
 
   steam:
