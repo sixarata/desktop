@@ -28,6 +28,10 @@
       "appimage",
       "deb",
       "rpm"
+    ],
+    "icon": [
+      "icons/app-512.png",
+      "icons/app-256.png"
     ]
   }
 }
