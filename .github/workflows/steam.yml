@@ -223,7 +223,7 @@ jobs:
       - name: Install helpers
         run: |
           sudo apt-get update
-          sudo apt-get install -y bash coreutils findutils p7zip-full msitools
+          sudo apt-get install -y bash coreutils findutils p7zip-full msitools dpkg-dev rpm2cpio cpio
 
       - name: Make gather scripts executable
         run: chmod +x steam/scripts/*.sh
