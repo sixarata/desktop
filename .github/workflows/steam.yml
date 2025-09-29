@@ -11,6 +11,9 @@ jobs:
   build:
     name: Build ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         os: [macos-14, ubuntu-22.04, windows-2022]
@@ -31,89 +34,79 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf rsync
+            libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - name: Install Tauri CLI
         run: npm i -D @tauri-apps/cli
 
+      # ---- Build web (portable) and sync to app/ ----
       - name: Build web (if needed) and sync to app/
-        shell: bash
         run: |
           set -euo pipefail
           SRC="vendor/sixarata"
-      
-          # 1) Build if the game defines a build script
+
+          # Build if script exists
           if [ -f "$SRC/package.json" ] && npm --prefix "$SRC" run | grep -qE '(^|[[:space:]])build([[:space:]]|:)'; then
             npm --prefix "$SRC" ci
             npm --prefix "$SRC" run build
           fi
-      
-          # 2) Find an index.html to ship (common output dirs first)
+
+          # Find index.html in common locations
           CANDIDATES=("$SRC/dist" "$SRC/build" "$SRC/out" "$SRC/public" "$SRC")
           FOUND=""
           for C in "${CANDIDATES[@]}"; do
             if [ -f "$C/index.html" ]; then FOUND="$C"; break; fi
           done
           if [ -z "$FOUND" ]; then
-            echo "::group::Debug: candidate listings"
+            echo "::group::Candidate listings"
             for C in "${CANDIDATES[@]}"; do
-              echo "== $C"
-              ls -la "$C" 2>/dev/null | sed -n '1,120p' || true
+              echo "== $C"; ls -la "$C" 2>/dev/null | sed -n '1,120p' || true
             done
             echo "::endgroup::"
-            echo "::error::No index.html found in: ${CANDIDATES[*]}"
+            echo "::error::No index.html found in any candidate directory."
             exit 1
           fi
-      
-          # 3) Copy to app/ (portable), then strip junk
+
+          # Copy to app/ (portable copy)
           rm -rf app && mkdir -p app
-          # copy contents, preserving dotfiles
-          ( shopt -s dotglob nullglob; cp -R "$FOUND"/* app/ || true )
-          # if above misses dotfiles on some shells, copy them explicitly:
-          [ -f "$FOUND/.htaccess" ] && cp "$FOUND/.htaccess" app/ || true
-      
-          # remove things we never want to ship
+          shopt -s dotglob nullglob
+          cp -R "$FOUND"/* app/ || true
+          # Remove junk
           rm -rf app/.git app/.github app/node_modules app/src-tauri
-      
-          echo "Synced from: $FOUND"
-          ls -la app | sed -n '1,200p'
-      
-          # 4) Guards
-          if [ ! -f app/index.html ]; then echo "::error::app/index.html missing after sync."; exit 1; fi
+
+          # Guards
+          if [ ! -f app/index.html ]; then echo "::error::app/index.html missing after sync"; exit 1; fi
           cnt=$(find app -type f | wc -l | tr -d ' ')
-          if [ "$cnt" -lt 3 ]; then echo "::error::app/ has too few files ($cnt)."; exit 1; fi
-  
+          if [ "$cnt" -lt 3 ]; then echo "::error::app/ has too few files ($cnt)"; exit 1; fi
+          if ! grep -q '"frontendDist": "../app"' src-tauri/tauri.conf.json; then
+            echo "::warning::Set \"frontendDist\": \"../app\" in src-tauri/tauri.conf.json"
+          fi
+
       - name: Tauri info
         run: npx tauri info
 
-      - name: Tauri build (verbose, collect logs)
+      - name: Tauri build (verbose)
         run: |
           set -euo pipefail
-          npx tauri build --verbose 2>&1 | tee tauri-build-macos.log
+          npx tauri build --verbose 2>&1 | tee tauri-build.log
 
-      - name: Collect macOS bundles (app/dmg) deterministically
+      # ---- Collect artifacts deterministically (no fragile globs) ----
+      - name: Collect macOS bundles
         if: ${{ matrix.os == 'macos-14' }}
-        shell: bash
         run: |
           set -euo pipefail
           mkdir -p _collect/macos
-          # Find any .app or .dmg under target; copy them into _collect/macos
-          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.dmg" \) -o -type d \( -name "*.app" \) | sort)
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "::group::Build log (tail)"
-            tail -n 2000 tauri-build-macos.log || true
-            echo "::endgroup::"
-            echo "::group::Target tree"
-            find src-tauri/target -maxdepth 5 -print
-            echo "::endgroup::"
-            echo "::error::No macOS bundles (.app/.dmg) found anywhere under src-tauri/target."
+          # .app are directories; find them and copy; also copy any .dmg
+          mapfile -t APPS < <(find src-tauri/target -type d -name "*.app" 2>/dev/null | sort)
+          mapfile -t DMGS < <(find src-tauri/target -type f -name "*.dmg" 2>/dev/null | sort)
+          if [ ${#APPS[@]} -eq 0 ] && [ ${#DMGS[@]} -eq 0 ]; then
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
+            echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
+            echo "::error::No macOS bundles (.app/.dmg) found."
             exit 1
           fi
-          for f in "${FILES[@]}"; do
-            echo "Collecting: $f"
-            cp -R "$f" _collect/macos/
-          done
-          echo "Collected into _collect/macos:"
+          for f in "${APPS[@]}"; do echo "Copy $f"; cp -R "$f" _collect/macos/; done
+          for f in "${DMGS[@]}"; do echo "Copy $f"; cp -R "$f" _collect/macos/; done
           ls -la _collect/macos
 
       - name: Upload macOS bundle(s)
@@ -124,25 +117,19 @@ jobs:
           path: _collect/macos/**
           if-no-files-found: error
 
-      - name: Tauri build (verbose, collect logs)
-        run: |
-          set -euo pipefail
-          npx tauri build --verbose 2>&1 | tee tauri-build.log
-
-      - name: Collect Windows bundles (nsis/msi)
+      - name: Collect Windows bundles
         if: ${{ matrix.os == 'windows-2022' }}
-        shell: bash
         run: |
           set -euo pipefail
           mkdir -p _collect/windows
-          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.exe" -o -name "*.msi" \) | sort)
+          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.exe" -o -name "*.msi" \) 2>/dev/null | sort)
           if [ ${#FILES[@]} -eq 0 ]; then
-            tail -n 2000 tauri-build.log || true
-            find src-tauri/target -maxdepth 5 -print
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
+            echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
             echo "::error::No Windows bundles (.exe/.msi) found."
             exit 1
           fi
-          for f in "${FILES[@]}"; do cp -R "$f" _collect/windows/; done
+          for f in "${FILES[@]}"; do echo "Copy $f"; cp -R "$f" _collect/windows/; done
           ls -la _collect/windows
 
       - name: Upload Windows bundle(s)
@@ -153,20 +140,19 @@ jobs:
           path: _collect/windows/**
           if-no-files-found: error
 
-      - name: Collect Linux bundles (AppImage/deb/rpm)
+      - name: Collect Linux bundles
         if: ${{ matrix.os == 'ubuntu-22.04' }}
-        shell: bash
         run: |
           set -euo pipefail
           mkdir -p _collect/linux
-          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | sort)
+          mapfile -t FILES < <(find src-tauri/target -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) 2>/dev/null | sort)
           if [ ${#FILES[@]} -eq 0 ]; then
-            tail -n 2000 tauri-build.log || true
-            find src-tauri/target -maxdepth 5 -print
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build.log || true; echo "::endgroup::"
+            echo "::group::Target tree"; find src-tauri/target -maxdepth 5 -print; echo "::endgroup::"
             echo "::error::No Linux bundles (AppImage/deb/rpm) found."
             exit 1
           fi
-          for f in "${FILES[@]}"; do cp -R "$f" _collect/linux/; done
+          for f in "${FILES[@]}"; do echo "Copy $f"; cp -R "$f" _collect/linux/; done
           ls -la _collect/linux
 
       - name: Upload Linux bundle(s)
@@ -181,6 +167,9 @@ jobs:
     name: Prepare Steam folders & (optional) upload
     needs: build
     runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
     env:
       STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
       STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
@@ -194,6 +183,7 @@ jobs:
 
       - name: Expand artifacts into workspace layout
         run: |
+          set -euo pipefail
           mkdir -p src-tauri/target/release/bundle
           # macOS
           if ls artifacts/bundle-macos-14 1>/dev/null 2>&1; then
@@ -221,7 +211,7 @@ jobs:
         run: bash steam/scripts/gather_linux.sh
 
       - name: Gather Windows
-        shell: pwsh
+        shell: pwsh   # only this one needs PowerShell
         run: ./steam/scripts/gather_win.ps1
 
       - name: Upload Steam-ready folders as artifact
@@ -234,8 +224,6 @@ jobs:
             release/win64/Sixarata/**
 
       - name: Upload to Steam (steamcmd in Docker)
-        # optionally gate on secrets being present; VSCode may warn, but GitHub accepts it:
-        # if: ${{ env.STEAM_USERNAME != '' && env.STEAM_PASSWORD != '' }}
         run: |
           docker run --rm -v "$PWD:/work" -w /work cm2network/steamcmd \
             bash -lc \
