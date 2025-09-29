@@ -39,65 +39,72 @@ jobs:
       - name: Build web (if needed) and sync to app/
         shell: bash
         run: |
-          set -e
-          if [ -f vendor/sixarata/package.json ]; then
-            npm --prefix vendor/sixarata ci
-            if npm --prefix vendor/sixarata run | grep -qE '(^|\s)build(\s|:)'; then
-              npm --prefix vendor/sixarata run build
-              rm -rf app && mkdir app && cp -R vendor/sixarata/dist/* app/
-            else
-              rm -rf app && mkdir app && rsync -a --delete \
-                --exclude '.git' --exclude 'node_modules' --exclude 'src-tauri' \
-                vendor/sixarata/ app/
-            fi
-          else
-            mkdir -p app
+          set -euo pipefail
+          SRC="vendor/sixarata"
+      
+          # Build if there's a build script
+          if [ -f "$SRC/package.json" ] && npm --prefix "$SRC" run | grep -qE '(^|\s)build(\s|:)'; then
+            npm --prefix "$SRC" ci
+            npm --prefix "$SRC" run build
           fi
-          echo "== app/ =="
-          ls -la app | head -n 200
-
-      - name: Ensure app is populated and clean
+      
+          # Candidate folders in priority order
+          CANDIDATES=(
+            "$SRC/dist"
+            "$SRC/build"
+            "$SRC/out"
+            "$SRC/public"
+            "$SRC"
+          )
+      
+          FOUND=""
+          for C in "${CANDIDATES[@]}"; do
+            if [ -f "$C/index.html" ]; then
+              FOUND="$C"
+              break
+            fi
+          done
+      
+          if [ -z "$FOUND" ]; then
+            echo "::group::Debug: show common paths"
+            for C in "${CANDIDATES[@]}"; do
+              echo "== $C"
+              ls -la "$C" 2>/dev/null | sed -n '1,120p' || true
+            done
+            echo "::endgroup::"
+            echo "::error::Could not locate index.html in any of: ${CANDIDATES[*]}. Ensure the game either builds to dist/ (or build/) or has index.html at repo root/public/."
+            exit 1
+          fi
+      
+          # Copy to app/, excluding junk
+          rm -rf app && mkdir app
+          rsync -a --delete \
+            --exclude '.git' --exclude 'node_modules' --exclude 'src-tauri' \
+            "$FOUND"/ app/
+      
+          echo "Synced from: $FOUND"
+          ls -la app | sed -n '1,200p'
+      
+      - name: Ensure app/ is populated and clean
         shell: bash
         run: |
           set -euo pipefail
-
-          # 1) app/ must exist
           if [ ! -d app ]; then
-            echo "::error::app/ directory is missing. The sync/build step did not create it."
+            echo "::error::app/ directory is missing."
             exit 1
           fi
-
-          # 2) must NOT contain src-tauri (misconfigured copy)
           if [ -d app/src-tauri ]; then
-            echo "::group::app/ tree (top)"
-            find app -maxdepth 2 -type d -print
-            echo "::endgroup::"
-            echo "::error::app/ contains src-tauri/. Your sync step is copying the Rust project. Exclude it (e.g., --exclude 'src-tauri')."
+            echo "::error::app/ contains src-tauri/. Exclude it from the copy."
             exit 1
           fi
-
-          # 3) require an index.html (static entrypoint)
           if [ ! -f app/index.html ]; then
-            echo "::group::app/ listing"
-            ls -la app | sed -n '1,200p'
-            echo "::endgroup::"
-            echo "::error::app/index.html not found. Ensure your build or rsync copied the game’s static output into app/."
+            echo "::error::app/index.html not found after sync. Wrong source copied."
             exit 1
           fi
-
-          # 4) require a minimum number of files (helps catch empty builds)
-          filecount=$(find app -type f | wc -l | tr -d ' ')
-          if [ "$filecount" -lt 3 ]; then
-            echo "::group::app/ listing"
-            ls -la app | sed -n '1,200p'
-            echo "::endgroup::"
-            echo "::error::app/ has too few files ($filecount). The build likely failed or copied the wrong directory."
-            exit 1
-          fi
-
-          # 5) friendly heads-up if frontendDist looks wrong (warn only)
+          cnt=$(find app -type f | wc -l | tr -d ' ')
+          [ "$cnt" -ge 3 ] || { echo "::error::app/ has too few files ($cnt)."; exit 1; }
           if ! grep -q '"frontendDist": "../app"' src-tauri/tauri.conf.json; then
-            echo "::warning::src-tauri/tauri.conf.json does not contain \"frontendDist\": \"../app\". If bundle is empty, fix this."
+            echo "::warning::Set \"frontendDist\": \"../app\" in src-tauri/tauri.conf.json"
           fi
 
       - name: Tauri info
