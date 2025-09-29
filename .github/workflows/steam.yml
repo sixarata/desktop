@@ -4,7 +4,12 @@ name: Tauri Build & (Optional) Steam Upload
 on:
   push:
     tags: ["v*.*.*"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      guard_code:
+        description: "Steam Guard code (optional)"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -192,6 +197,7 @@ jobs:
     env:
       STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
       STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+      STEAM_GUARD_CODE: ${{ github.event.inputs.guard_code }}
     steps:
       - uses: actions/checkout@v4
 
@@ -246,8 +252,25 @@ jobs:
             release/linux/Sixarata/**
             release/win64/Sixarata/**
 
+      - name: Cache Steam login (persist login key)
+        uses: actions/cache@v4
+        with:
+          path: .steamcmd-cache
+          key: steamcmd-${{ secrets.STEAM_USERNAME }}-v1
+
+      - name: Show Steam cache dir
+        run: ls -la .steamcmd-cache || true
+
       - name: Upload to Steam (steamcmd in Docker)
         run: |
-          docker run --rm -v "$PWD:/work" -w /work cm2network/steamcmd \
-            bash -lc \
-            "/home/steam/steamcmd/steamcmd.sh +login \"$STEAM_USERNAME\" \"$STEAM_PASSWORD\" +run_app_build steam/build_app.vdf +quit"
+          mkdir -p .steamcmd-cache
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -v "$PWD/.steamcmd-cache":/home/steam/Steam \
+            cm2network/steamcmd \
+            bash -lc '/home/steam/steamcmd/steamcmd.sh \
+              +@ShutdownOnFailedCommand 1 \
+              +@NoPromptForPassword 1 \
+              +login "'"$STEAM_USERNAME"'" "'"$STEAM_PASSWORD"'" '"${STEAM_GUARD_CODE:++set_steam_guard_code "$STEAM_GUARD_CODE"}"' \
+              +run_app_build steam/build_app.vdf \
+              +quit'
