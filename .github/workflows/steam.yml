@@ -41,7 +41,7 @@ jobs:
         run: npm i -D @tauri-apps/cli
 
       # ---- quick repo/layout guard ----
-      - name: Guard: repo layout
+      - name: Guard repo layout
         run: |
           set -euo pipefail
           test -d src-tauri || { echo "::error::missing src-tauri/ at repo root"; exit 1; }
