@@ -223,6 +223,9 @@ jobs:
       - name: Install helpers
         run: sudo apt-get update && sudo apt-get install -y bash coreutils findutils p7zip-full
 
+      - name: Make gather scripts executable
+        run: chmod +x steam/scripts/*.sh
+
       - name: Gather macOS
         run: bash steam/scripts/gather_macos.sh
 
