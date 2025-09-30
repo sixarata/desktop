@@ -1,0 +1,186 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: 1. Build Tauri Bundles
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 3 * * *'  # Nightly at 3am UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-22.04, windows-2022]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libfuse2
+
+      - name: Install Tauri CLI
+        run: npm i -D @tauri-apps/cli
+
+      # ---- quick repo/layout guard ----
+      - name: Guard repo layout
+        run: |
+          set -euo pipefail
+          test -d src-tauri || { echo "::error::missing src-tauri/ at repo root"; exit 1; }
+          test -f src-tauri/tauri.conf.json || { echo "::error::missing src-tauri/tauri.conf.json"; exit 1; }
+          echo "== tauri.conf.json (head) ==" && sed -n '1,120p' src-tauri/tauri.conf.json
+
+      # ---- build web (portable) and sync to app/ ----
+      - name: Build web (if needed) and sync to app/
+        run: |
+          set -euo pipefail
+          SRC="vendor/sixarata"
+
+          # Build if the game defines a "build" script
+          if [ -f "$SRC/package.json" ] && npm --prefix "$SRC" run | grep -qE '(^|[[:space:]])build([[:space:]]|:)'; then
+            npm --prefix "$SRC" ci
+            npm --prefix "$SRC" run build
+          fi
+
+          # Find index.html in common locations
+          CANDIDATES=("$SRC/dist" "$SRC/build" "$SRC/out" "$SRC/public" "$SRC")
+          FOUND=""
+          for C in "${CANDIDATES[@]}"; do
+            if [ -f "$C/index.html" ]; then FOUND="$C"; break; fi
+          done
+          if [ -z "$FOUND" ]; then
+            echo "::group::Candidate listings"
+            for C in "${CANDIDATES[@]}"; do
+              echo "== $C"; ls -la "$C" 2>/dev/null | sed -n '1,120p' || true
+            done
+            echo "::endgroup::"
+            echo "::error::No index.html found in any candidate directory."
+            exit 1
+          fi
+
+          # Copy to app/ (portable), strip junk
+          rm -rf app && mkdir -p app
+          shopt -s dotglob nullglob
+          cp -R "$FOUND"/* app/ || true
+          rm -rf app/.git app/.github app/node_modules app/src-tauri
+
+          # Guards
+          test -f app/index.html || { echo "::error::app/index.html missing after sync"; exit 1; }
+          cnt=$(find app -type f | wc -l | tr -d ' ')
+          [ "$cnt" -ge 3 ] || { echo "::error::app/ has too few files ($cnt)"; exit 1; }
+          if ! grep -q '"frontendDist": "../app"' src-tauri/tauri.conf.json; then
+            echo "::warning::Set \"frontendDist\": \"../app\" in src-tauri/tauri.conf.json"
+          fi
+          echo "== app/ (head) ==" && ls -la app | sed -n '1,120p'
+
+      - name: Tauri info
+        run: npx tauri info
+
+      # ---- per-OS builds with explicit bundles + logs ----
+      - name: Tauri build (macOS)
+        if: ${{ matrix.os == 'macos-14' }}
+        run: |
+          set -euo pipefail
+          npx tauri build --bundles app,dmg --target aarch64-apple-darwin --verbose 2>&1 | tee tauri-build-macos.log
+
+      - name: Tauri build (Windows)
+        if: ${{ matrix.os == 'windows-2022' }}
+        run: |
+          set -euo pipefail
+          npx tauri build --bundles nsis,msi --verbose 2>&1 | tee tauri-build-windows.log
+
+      - name: Tauri build (Linux)
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
+        run: |
+          set -euo pipefail
+          npx tauri build --bundles appimage,deb,rpm --verbose 2>&1 | tee tauri-build-ubuntu.log
+
+      # ---- collectors (bash-3.2 safe) ----
+      - name: Collect macOS bundles
+        if: ${{ matrix.os == 'macos-14' }}
+        run: |
+          set -euo pipefail
+          mkdir -p _collect/macos
+          found=0
+          while IFS= read -r -d '' f; do cp -R "$f" _collect/macos/; echo "Copy $f"; found=1; done < <(find src-tauri/target -type d -name '*.app' -print0 2>/dev/null)
+          while IFS= read -r -d '' f; do cp -R "$f" _collect/macos/; echo "Copy $f"; found=1; done < <(find src-tauri/target -type f -name '*.dmg' -print0 2>/dev/null)
+          if [ "$found" -eq 0 ]; then
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build-macos.log || true; echo "::endgroup::"
+            echo "::group::Target tree"; find src-tauri/target -maxdepth 6 -print || true; echo "::endgroup::"
+            echo "::error::No macOS bundles (.app/.dmg) found."; exit 1
+          fi
+          ls -la _collect/macos
+
+      - name: Collect Windows bundles
+        if: ${{ matrix.os == 'windows-2022' }}
+        run: |
+          set -euo pipefail
+          mkdir -p _collect/windows
+          found=0
+          while IFS= read -r -d '' f; do cp -R "$f" _collect/windows/; echo "Copy $f"; found=1; done < <(find src-tauri/target -type f \( -name '*.exe' -o -name '*.msi' \) -print0 2>/dev/null)
+          if [ "$found" -eq 0 ]; then
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build-windows.log || true; echo "::endgroup::"
+            echo "::group::Target tree"; find src-tauri/target -maxdepth 6 -print || true; echo "::endgroup::"
+            echo "::error::No Windows bundles (.exe/.msi) found."; exit 1
+          fi
+          ls -la _collect/windows
+
+      - name: Collect Linux bundles
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
+        run: |
+          set -euo pipefail
+          mkdir -p _collect/linux
+          found=0
+          while IFS= read -r -d '' f; do cp -R "$f" _collect/linux/; echo "Copy $f"; found=1; done < <(find src-tauri/target -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \) -print0 2>/dev/null)
+          if [ "$found" -eq 0 ]; then
+            echo "::group::Build log (tail)"; tail -n 2000 tauri-build-ubuntu.log || true; echo "::endgroup::"
+            echo "::group::Target tree"; find src-tauri/target -maxdepth 6 -print || true; echo "::endgroup::"
+            echo "::error::No Linux bundles (AppImage/deb/rpm) found."; exit 1
+          fi
+          ls -la _collect/linux
+
+      # ---- upload per-OS artifacts ----
+      - name: Upload macOS bundle(s)
+        if: ${{ matrix.os == 'macos-14' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-macos-14
+          path: _collect/macos/**
+          if-no-files-found: error
+
+      - name: Upload Windows bundle(s)
+        if: ${{ matrix.os == 'windows-2022' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-windows-2022
+          path: _collect/windows/**
+          if-no-files-found: error
+
+      - name: Upload Linux bundle(s)
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-ubuntu-22.04
+          path: _collect/linux/**
+          if-no-files-found: error

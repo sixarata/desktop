@@ -1,0 +1,97 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: 2. Commit Built Files
+
+on:
+  workflow_run:
+    workflows: ["Build Tauri Bundles"]
+    types:
+      - completed
+
+jobs:
+  commit:
+    name: Commit builds to repository
+    runs-on: ubuntu-22.04
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Expand artifacts into workspace layout
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/target/release/bundle
+          # macOS
+          if ls artifacts/bundle-macos-14 1>/dev/null 2>&1; then
+            mkdir -p src-tauri/target/release/bundle/macos
+            cp -R artifacts/bundle-macos-14/* src-tauri/target/release/bundle/macos/ || true
+          fi
+          # Windows
+          if ls artifacts/bundle-windows-2022 1>/dev/null 2>&1; then
+            mkdir -p src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
+            cp -R artifacts/bundle-windows-2022/* src-tauri/target/release/bundle/ -v || true
+          fi
+          # Linux
+          if ls artifacts/bundle-ubuntu-22.04 1>/dev/null 2>&1; then
+            mkdir -p src-tauri/target/release/bundle/appimage src-tauri/target/release/bundle/deb src-tauri/target/release/bundle/rpm
+            cp -R artifacts/bundle-ubuntu-22.04/* src-tauri/target/release/bundle/ -v || true
+          fi
+
+      - name: Install helpers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bash coreutils findutils p7zip-full msitools dpkg-dev rpm2cpio cpio
+
+      - name: Make gather scripts executable
+        run: chmod +x steam/scripts/*.sh
+
+      - name: Gather macOS
+        run: bash steam/scripts/gather_macos.sh
+
+      - name: Gather Linux
+        run: bash steam/scripts/gather_linux.sh
+
+      - name: Gather Windows
+        run: ./steam/scripts/gather_windows.sh
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push built files
+        run: |
+          set -euo pipefail
+
+          # Add the release folders
+          git add -f release/ || true
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          # Commit and push
+          git commit -m "chore: update built files [skip ci]"
+          git push origin ${{ github.event.workflow_run.head_branch }}
+
+      - name: Upload Steam-ready folders as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: steam-release-folders
+          path: |
+            release/osx/Sixarata/**
+            release/linux/Sixarata/**
+            release/win64/Sixarata/**

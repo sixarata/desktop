@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: 3. Upload to Steam
+
+on:
+  workflow_run:
+    workflows: ["Commit Built Files"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      guard_code:
+        description: "Steam Guard code (optional)"
+        required: false
+        default: ""
+
+jobs:
+  upload:
+    name: Upload to Steam
+    runs-on: ubuntu-22.04
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+      STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+      STEAM_GUARD_CODE: ${{ github.event.inputs.guard_code }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Authentication & cache first for fast failures ----
+      - name: Cache Steam login (persist login key)
+        uses: actions/cache@v4
+        with:
+          path: .steamcmd-cache
+          key: steamcmd-${{ secrets.STEAM_USERNAME }}-v1
+
+      - name: Show Steam cache dir
+        run: ls -la .steamcmd-cache || true
+
+      - name: Verify Steam credentials are set
+        run: |
+          if [ -z "$STEAM_USERNAME" ] || [ -z "$STEAM_PASSWORD" ]; then
+            echo "::error::STEAM_USERNAME and STEAM_PASSWORD secrets must be set"
+            exit 1
+          fi
+
+      # ---- Download artifacts after authentication checks pass ----
+      - name: Download Steam-ready folders
+        uses: actions/download-artifact@v4
+        with:
+          name: steam-release-folders
+          path: release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id || github.run_id }}
+
+      - name: Verify release folders
+        run: |
+          set -euo pipefail
+          echo "=== Release folder contents ==="
+          find release -type f | head -20 || true
+
+          # Verify required folders exist and have content
+          for platform in osx linux win64; do
+            if [ ! -d "release/$platform/Sixarata" ]; then
+              echo "::error::Missing release/$platform/Sixarata folder"
+              exit 1
+            fi
+          done
+
+      - name: Upload to Steam (steamcmd in Docker)
+        run: |
+          mkdir -p .steamcmd-cache
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            -v "$PWD/.steamcmd-cache":/home/steam/Steam \
+            cm2network/steamcmd \
+            bash -lc '/home/steam/steamcmd/steamcmd.sh \
+              +@ShutdownOnFailedCommand 1 \
+              +@NoPromptForPassword 1 \
+              +login "'"$STEAM_USERNAME"'" "'"$STEAM_PASSWORD"'" '"${STEAM_GUARD_CODE:++set_steam_guard_code "$STEAM_GUARD_CODE"}"' \
+              +run_app_build steam/build_app.vdf \
+              +quit'
