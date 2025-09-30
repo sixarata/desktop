@@ -3,7 +3,7 @@ name: 3. Upload to Steam
 
 on:
   workflow_run:
-    workflows: ["Commit Built Files"]
+    workflows: ["2. Commit Built Files"]
     types:
       - completed
   workflow_dispatch:

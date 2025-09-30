@@ -3,7 +3,7 @@ name: 2. Commit Built Files
 
 on:
   workflow_run:
-    workflows: ["Build Tauri Bundles"]
+    workflows: ["1. Build Tauri Bundles"]
     types:
       - completed
 
