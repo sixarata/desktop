@@ -6,6 +6,7 @@ on:
     workflows: ["2. Commit Built Files"]
     types:
       - completed
+
   workflow_dispatch:
     inputs:
       guard_code:
