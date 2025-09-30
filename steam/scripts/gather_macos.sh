@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SRC_DIR="src-tauri/target/release/bundle/macos"
-DST_DIR="release/osx/Sixarata"
+DST_DIR="release/macos/Sixarata"
 
 rm -rf "$DST_DIR"
 mkdir -p "$DST_DIR"

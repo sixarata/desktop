@@ -9,7 +9,7 @@
   "depots"
   {
     "3974442" "steam/depot_win.vdf"        // Windows depot
-    "3974443" "steam/depot_osx.vdf"        // macOS depot
+    "3974443" "steam/depot_macos.vdf"      // macOS depot
     "3974444" "steam/depot_linux.vdf"      // Linux depot
   }
 }

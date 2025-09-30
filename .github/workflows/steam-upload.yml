@@ -63,7 +63,7 @@ jobs:
           find release -type f | head -20 || true
 
           # Verify required folders exist and have content
-          for platform in osx linux win64; do
+          for platform in macos linux win64; do
             if [ ! -d "release/$platform/Sixarata" ]; then
               echo "::error::Missing release/$platform/Sixarata folder"
               exit 1

@@ -248,7 +248,7 @@ jobs:
         with:
           name: steam-release-folders
           path: |
-            release/osx/Sixarata/**
+            release/macos/Sixarata/**
             release/linux/Sixarata/**
             release/win64/Sixarata/**
 

@@ -163,14 +163,15 @@ jobs:
             fi
           done
 
-      - name: Strip quarantine attributes from macOS bundles
+      - name: Add installation helper for macOS
         if: ${{ matrix.os == 'macos-14' }}
         run: |
           set -euo pipefail
-          echo "=== Removing quarantine attributes ==="
-          # Remove extended attributes that cause Gatekeeper issues
-          xattr -cr _collect/macos/* || true
-          echo "Quarantine attributes removed"
+          echo "=== Adding installation helper script ==="
+          cp helpers/macos/install.sh _collect/macos/
+          cp helpers/macos/INSTALL.md _collect/macos/README.md
+          chmod +x _collect/macos/install-macos.sh
+          echo "Helper files added"
 
       - name: Collect Windows bundles
         if: ${{ matrix.os == 'windows-2022' }}
