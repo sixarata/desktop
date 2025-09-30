@@ -132,6 +132,46 @@ jobs:
           fi
           ls -la _collect/macos
 
+      - name: Diagnose macOS bundles
+        if: ${{ matrix.os == 'macos-14' }}
+        run: |
+          set -euo pipefail
+          echo "=== macOS Bundle Diagnostics ==="
+          for app in _collect/macos/*.app; do
+            if [ -d "$app" ]; then
+              echo "::group::Inspecting $app"
+              echo "--- Directory structure ---"
+              find "$app" -maxdepth 3 -print || true
+              echo ""
+              echo "--- Code signature ---"
+              codesign -dv --verbose=4 "$app" 2>&1 || echo "No valid signature"
+              echo ""
+              echo "--- Verify signature ---"
+              codesign --verify --deep --strict --verbose=2 "$app" 2>&1 || echo "Signature verification failed"
+              echo ""
+              echo "--- Executable info ---"
+              if [ -f "$app/Contents/MacOS/app" ]; then
+                file "$app/Contents/MacOS/app"
+                otool -L "$app/Contents/MacOS/app" | head -20 || true
+              fi
+              echo ""
+              echo "--- Info.plist ---"
+              if [ -f "$app/Contents/Info.plist" ]; then
+                cat "$app/Contents/Info.plist" || true
+              fi
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Strip quarantine attributes from macOS bundles
+        if: ${{ matrix.os == 'macos-14' }}
+        run: |
+          set -euo pipefail
+          echo "=== Removing quarantine attributes ==="
+          # Remove extended attributes that cause Gatekeeper issues
+          xattr -cr _collect/macos/* || true
+          echo "Quarantine attributes removed"
+
       - name: Collect Windows bundles
         if: ${{ matrix.os == 'windows-2022' }}
         run: |
