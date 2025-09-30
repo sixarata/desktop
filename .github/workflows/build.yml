@@ -8,6 +8,8 @@ on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [nightly]
 
 jobs:
   build:
@@ -30,6 +32,13 @@ jobs:
           node-version: "20"
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Update game submodule (if dispatched)
+        if: github.event_name == 'repository_dispatch'
+        run: |
+            cd vendor/sixarata
+            git fetch origin ${{ github.event.client_payload.ref }}
+            git checkout ${{ github.event.client_payload.ref }}
 
       - name: Linux deps
         if: matrix.os == 'ubuntu-22.04'
