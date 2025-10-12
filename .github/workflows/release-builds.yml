@@ -104,9 +104,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: "Build ${{ steps.tag.outputs.tag }}"
+          name: "Auto-build: ${{ steps.tag.outputs.tag }}"
           body: |
-            Automated build from commit ${{ github.sha }}
+            Automated build from commit: ${{ github.sha }}
 
             Branch: ${{ github.event.workflow_run.head_branch }}
             Workflow Run: ${{ github.event.workflow_run.html_url }}
