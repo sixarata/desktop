@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: 2. Commit Built Files
+name: 2. Release Tauri Builds
 
 on:
   workflow_run:
@@ -9,12 +9,14 @@ on:
 
 jobs:
   commit:
-    name: Commit builds to repository
+    name: Create GitHub Release
     runs-on: ubuntu-22.04
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     defaults:
       run:
         shell: bash
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -65,27 +67,54 @@ jobs:
       - name: Gather Windows
         run: ./steam/scripts/gather_windows.sh
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Commit and push built files
+      - name: Create compressed archives for release
         run: |
           set -euo pipefail
+          mkdir -p release-archives
 
-          # Add the release folders
-          git add -f release/ || true
-
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-            exit 0
+          # Compress macOS
+          if [ -d "release/macos/Sixarata" ]; then
+            cd release/macos
+            tar -czf ../../release-archives/sixarata-macos.tar.gz Sixarata/
+            cd ../..
           fi
 
-          # Commit and push
-          git commit -m "chore: update built files [skip ci]"
-          git push origin ${{ github.event.workflow_run.head_branch }}
+          # Compress Linux
+          if [ -d "release/linux/Sixarata" ]; then
+            cd release/linux
+            tar -czf ../../release-archives/sixarata-linux.tar.gz Sixarata/
+            cd ../..
+          fi
+
+          # Compress Windows
+          if [ -d "release/win64/Sixarata" ]; then
+            cd release/win64
+            7z a -tzip ../../release-archives/sixarata-windows.zip Sixarata/
+            cd ../..
+          fi
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          TAG="build-$(date +'%Y%m%d-%H%M%S')-${GITHUB_SHA::7}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Build ${{ steps.tag.outputs.tag }}"
+          body: |
+            Automated build from commit ${{ github.sha }}
+
+            Branch: ${{ github.event.workflow_run.head_branch }}
+            Workflow Run: ${{ github.event.workflow_run.html_url }}
+          files: |
+            release-archives/sixarata-*.tar.gz
+            release-archives/sixarata-*.zip
+          draft: false
+          prerelease: true
 
       - name: Upload Steam-ready folders as artifact
         uses: actions/upload-artifact@v4

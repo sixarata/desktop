@@ -3,7 +3,7 @@ name: 3. Upload to Steam
 
 on:
   workflow_run:
-    workflows: ["2. Commit Built Files"]
+    workflows: ["2. Release Tauri Builds"]
     types:
       - completed
 
