@@ -11,6 +11,7 @@ app
 node_modules
 dist
 dist-ssr
+target
 *.local
 
 # Ignore submodule working tree
