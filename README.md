@@ -65,7 +65,7 @@ Compiled binaries will be in `src-tauri/target/release/bundle/`.
 
 ## Project Structure
 
-```
+```bash
 desktop/
 ├── app/               # Game source (synced from vendor/sixarata)
 │   ├── scripts/       # Game engine and logic
