@@ -12,6 +12,7 @@ app_path="$(find "$SRC_DIR" -maxdepth 2 -type d -name '*.app' -print -quit || tr
 if [ -n "${app_path:-}" ]; then
   echo "Using app bundle: $app_path"
   cp -R "$app_path" "$DST_DIR/"
+  chmod +x "$DST_DIR"/*.app/Contents/MacOS/*
   ls -la "$DST_DIR"
   exit 0
 fi
@@ -25,6 +26,7 @@ if [ -n "${dmg_path:-}" ]; then
   inner_app="$(find "$tmpdir" -type d -name '*.app' -print -quit || true)"
   if [ -n "${inner_app:-}" ]; then
     cp -R "$inner_app" "$DST_DIR/"
+    chmod +x "$DST_DIR"/*.app/Contents/MacOS/*
     rm -rf "$tmpdir"
     ls -la "$DST_DIR"
     exit 0

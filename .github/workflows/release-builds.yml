@@ -11,11 +11,14 @@ jobs:
   commit:
     name: Create GitHub Release
     runs-on: ubuntu-22.04
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Nightly builds verify that the desktop still compiles. They should not
+    # create another release for an unchanged revision.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'schedule' }}
     defaults:
       run:
         shell: bash
     permissions:
+      actions: read
       contents: write
 
     steps:
@@ -93,6 +96,10 @@ jobs:
             cd ../..
           fi
 
+          # GitHub artifacts do not preserve executable bits. Wrap the Steam
+          # depot tree in a tarball so macOS and Linux entrypoints stay runnable.
+          tar -czf steam-release-folders.tar.gz release
+
       - name: Generate release tag
         id: tag
         run: |
@@ -120,7 +127,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: steam-release-folders
-          path: |
-            release/macos/Sixarata/**
-            release/linux/Sixarata/**
-            release/win64/Sixarata/**
+          path: steam-release-folders.tar.gz
+          if-no-files-found: error
