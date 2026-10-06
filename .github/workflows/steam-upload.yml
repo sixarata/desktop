@@ -1,44 +1,32 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: 3. Upload to Steam
 
-on:
-  workflow_run:
-    workflows: ["2. Release Tauri Builds"]
-    types:
-      - completed
+permissions:
+  actions: read
+  contents: read
 
+on:
   workflow_dispatch:
     inputs:
-      guard_code:
-        description: "Steam Guard code (optional)"
-        required: false
-        default: ""
+      release_run_id:
+        description: "Successful Release Tauri Builds run ID"
+        required: true
+        type: string
 
 jobs:
   upload:
     name: Upload to Steam
     runs-on: ubuntu-22.04
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    environment: steam-beta
     defaults:
       run:
         shell: bash
     env:
       STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
       STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
-      STEAM_GUARD_CODE: ${{ github.event.inputs.guard_code }}
 
     steps:
       - uses: actions/checkout@v4
-
-      # ---- Authentication & cache first for fast failures ----
-      - name: Cache Steam login (persist login key)
-        uses: actions/cache@v4
-        with:
-          path: .steamcmd-cache
-          key: steamcmd-${{ secrets.STEAM_USERNAME }}-v1
-
-      - name: Show Steam cache dir
-        run: ls -la .steamcmd-cache || true
 
       - name: Verify Steam credentials are set
         run: |
@@ -52,9 +40,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: steam-release-folders
-          path: release
+          path: artifacts
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id || github.run_id }}
+          run-id: ${{ inputs.release_run_id }}
+
+      - name: Extract Steam-ready folders
+        run: |
+          set -euo pipefail
+          tar -xzf artifacts/steam-release-folders.tar.gz
 
       - name: Verify release folders
         run: |
@@ -70,16 +63,27 @@ jobs:
             fi
           done
 
+          test -x release/macos/Sixarata/Sixarata.app/Contents/MacOS/app || {
+            echo "::error::macOS entrypoint is not executable"
+            exit 1
+          }
+          test -x release/linux/Sixarata/Sixarata.AppImage || {
+            echo "::error::Linux entrypoint is not executable"
+            exit 1
+          }
+          test -f release/win64/Sixarata/Sixarata.exe || {
+            echo "::error::Windows entrypoint is missing"
+            exit 1
+          }
+
       - name: Upload to Steam (steamcmd in Docker)
         run: |
-          mkdir -p .steamcmd-cache
           docker run --rm \
             -v "$PWD:/work" -w /work \
-            -v "$PWD/.steamcmd-cache":/home/steam/Steam \
             cm2network/steamcmd \
             bash -lc '/home/steam/steamcmd/steamcmd.sh \
               +@ShutdownOnFailedCommand 1 \
               +@NoPromptForPassword 1 \
-              +login "'"$STEAM_USERNAME"'" "'"$STEAM_PASSWORD"'" '"${STEAM_GUARD_CODE:++set_steam_guard_code "$STEAM_GUARD_CODE"}"' \
+              +login "'"$STEAM_USERNAME"'" "'"$STEAM_PASSWORD"'" \
               +run_app_build steam/build_app.vdf \
               +quit'

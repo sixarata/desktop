@@ -1,10 +1,10 @@
 "appbuild"
 {
-  "appid" "3974440"                         // <-- replace with your real App ID
+  "appid" "3974440"
   "desc"  "Sixarata desktop build"
   "buildoutput" "steam/steambuild_output"
   "contentroot" "."
-  "setlive" "beta"                         // change to "public" when ready
+  "setlive" "beta"
 
   "depots"
   {

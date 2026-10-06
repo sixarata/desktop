@@ -119,6 +119,9 @@ This repo includes Steam depot configurations in the `steam/` directory:
 - `depot_*.vdf` - Platform-specific depot configs
 - `scripts/` - Build gathering scripts for each platform
 
+See [the Steam beta release guide](docs/steam-release.md) for the complete
+build, upload, Steamworks configuration, testing, and artwork procedure.
+
 ## Engine Architecture
 
 The Sixarata game engine is organized into modular systems:

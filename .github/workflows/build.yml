@@ -33,6 +33,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Add macOS build targets
+        if: ${{ matrix.os == 'macos-14' }}
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Update game submodule (if dispatched)
         if: github.event_name == 'repository_dispatch'
         run: |
@@ -111,7 +115,7 @@ jobs:
         if: ${{ matrix.os == 'macos-14' }}
         run: |
           set -euo pipefail
-          npx tauri build --bundles app,dmg --target aarch64-apple-darwin --verbose 2>&1 | tee tauri-build-macos.log
+          npx tauri build --bundles app,dmg --target universal-apple-darwin --verbose 2>&1 | tee tauri-build-macos.log
 
       - name: Tauri build (Windows)
         if: ${{ matrix.os == 'windows-2022' }}

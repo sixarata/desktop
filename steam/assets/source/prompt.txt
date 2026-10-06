@@ -1,0 +1,11 @@
+Use case: ads-marketing
+Asset type: master key art for a Steam store and library asset set
+Primary request: Create a polished, restrained pixel-art key visual that looks unmistakably like the referenced Sixarata game, suitable for later crops into both wide and portrait Steam capsules.
+Input images: one image is the existing geometric Sixarata app mark; one image is a live gameplay reference. Use both only as visual references for the established identity and gameplay language.
+Scene/backdrop: near-black two-dimensional game space with layered charcoal-gray geometric platforms and sparse architectural forms suggesting depth and parallax.
+Subject: a very small warm golden-yellow square player standing on a green platform, with a few simple obstacles and distant platforms, preserving the game's extreme scale and minimal geometry.
+Style/medium: crisp high-resolution pixel art, deliberately simple shapes, no gradients that blur pixels, no photorealism, no 3D render, no detailed character illustration.
+Composition/framing: wide cinematic composition with the player near the lower center; strong focal hierarchy; important forms stay inside the central safe area; generous dark negative space so the art can crop cleanly to 16:9, 920:430, 462:174, 748:896, and 600:900.
+Lighting/mood: quiet, mysterious, spacious, understated.
+Color palette: black and near-black background, several charcoal grays, restrained green platforms, one small golden-yellow player accent.
+Constraints: artwork only; no words; do not render the title; no logo; no UI, counters, icons, ratings, badges, borders, watermark, or marketing copy. Keep the visual language very close to the simple referenced game rather than inventing a different genre.
